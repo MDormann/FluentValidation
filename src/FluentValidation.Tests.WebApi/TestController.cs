@@ -20,11 +20,16 @@ namespace FluentValidation.Tests.WebApi {
 	using System.Linq;
 	using System.Web.Http;
 	using System.Web.Http.Results;
+	using FluentValidation.WebApi;
 
 	public class TestController : ApiController {
+		[HttpPost]
+		public IHttpActionResult TestModel11(TestModel11 model) {
+			return OutputErrors();
+		}
+		
         [HttpPost]
-        public IHttpActionResult TestModel10(TestModel10 model)
-        {
+        public IHttpActionResult TestModel10(TestModel10 model) {
             return OutputErrors();
         }
 
@@ -77,6 +82,33 @@ namespace FluentValidation.Tests.WebApi {
 			return OutputErrors();
 		}
 
+		public IHttpActionResult RulesetTestModel([CustomizeValidator(RuleSet = "Names")] RulesetTestModel model) {
+			return OutputErrors();
+		}
+
+		public IHttpActionResult PropertiesTestModel([CustomizeValidator(Properties="Surname,Forename")]PropertiesTestModel model) {
+			return OutputErrors();
+		}
+
+		public IHttpActionResult InterceptorTest([CustomizeValidator(Interceptor = typeof(SimplePropertyInterceptor))] PropertiesTestModel model) {
+			return OutputErrors();
+		}
+
+		public IHttpActionResult ClearErrorsInterceptorTest([CustomizeValidator(Interceptor = typeof(ClearErrorsInterceptor))] PropertiesTestModel model) {
+			return OutputErrors();
+		}
+
+		public IHttpActionResult BuiltInInterceptorTest(PropertiesTestModel2 model) {
+			return OutputErrors();
+		}
+		public IHttpActionResult TwoParameters([CustomizeValidator(RuleSet = "Names")] RulesetTestModel first, RulesetTestModel second) {
+			return OutputErrors();
+		}
+
+		public IHttpActionResult DataAnnotations(DataAnnotationsModel model) {
+			return OutputErrors();
+		}
+		
 		private JsonResult<List<SimpleError>> OutputErrors() {
 			var q = from x in ModelState
 				from err in x.Value.Errors

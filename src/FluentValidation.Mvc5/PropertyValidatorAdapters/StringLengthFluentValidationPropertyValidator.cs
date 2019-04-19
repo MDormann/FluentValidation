@@ -25,16 +25,16 @@
 				yield break;
 			}
 
-			var formatter = new MessageFormatter()
+			var formatter = ValidatorOptions.MessageFormatterFactory()
 				.AppendPropertyName(Rule.GetDisplayName())
 				.AppendArgument("MinLength", LengthValidator.Min)
 				.AppendArgument("MaxLength", LengthValidator.Max);
 
-			var messageNeedsSplitting = LengthValidator.ErrorMessageSource.ResourceType == typeof(LanguageManager);
+			var messageNeedsSplitting = Validator.Options.ErrorMessageSource is LanguageStringSource;
 			string message;
 
 			try {
-				message = LengthValidator.ErrorMessageSource.GetString(null);
+				message = Validator.Options.ErrorMessageSource.GetString(null);
 			}
 			catch (FluentValidationMessageFormatException) {
 				// Use provided a message that contains placeholders based on object properties. We can't use that here, so just fall back to the default. 
@@ -50,8 +50,8 @@
 				messageNeedsSplitting = true;
 			}
 
-			if(messageNeedsSplitting) {
-				// If we're using the default resources then the mesage for length errors will have two parts, eg:
+			if(messageNeedsSplitting && message.Contains(".") && message.Contains("{TotalLength}")) {
+				// If we're using the default resources then the message for length errors will have two parts, eg:
 				// '{PropertyName}' must be between {MinLength} and {MaxLength} characters. You entered {TotalLength} characters.
 				// We can't include the "TotalLength" part of the message because this information isn't available at the time the message is constructed.
 				// Instead, we'll just strip this off by finding the index of the period that separates the two parts of the message.
@@ -61,7 +61,14 @@
 
 			message = formatter.BuildMessage(message);
 
-			yield return new ModelClientValidationStringLengthRule(message, LengthValidator.Min, LengthValidator.Max) ;
+			ModelClientValidationRule rule;
+			if (lengthVal is MinimumLengthValidator)
+				rule = new ModelClientValidationMinLengthRule(message, LengthValidator.Min);
+			else if (lengthVal is MaximumLengthValidator)
+				rule = new ModelClientValidationMaxLengthRule(message, LengthValidator.Max);
+			else
+				rule = new ModelClientValidationStringLengthRule(message, LengthValidator.Min, LengthValidator.Max);
+			yield return rule;
 		}
 	}
 }

@@ -29,92 +29,66 @@ namespace FluentValidation.Validators {
 	using Results;
 
 	public abstract class PropertyValidator : IPropertyValidator {
-		private List<Func<object, object, object>> customFormatArgs;
-		private IStringSource errorSource;
-		private IStringSource originalErrorSource;
-		private IStringSource errorCodeSource;
-		private IStringSource originalErrorCodeSource;
-
-		public virtual bool IsAsync {
-			get { return false; }
-		}
-
-		public Func<object, object> CustomStateProvider { get; set; }
-
-		public Severity Severity { get; set; }
-
-		public ICollection<Func<object, object, object>> CustomMessageFormatArguments {
-			get { return customFormatArgs ?? (customFormatArgs = new List<Func<object, object, object>>()); }
-		}
+		public PropertyValidatorOptions Options { get; } = new PropertyValidatorOptions();
 
 		protected PropertyValidator(IStringSource errorMessageSource) {
-			originalErrorSource = errorSource = errorMessageSource;
+			if(errorMessageSource == null) errorMessageSource = new StaticStringSource("No default error message has been specified.");
+			else if (errorMessageSource is LanguageStringSource l && l.ErrorCodeFunc == null) 
+				l.ErrorCodeFunc = ctx => Options.ErrorCodeSource?.GetString(ctx);
+			
+			Options.ErrorMessageSource = errorMessageSource;
 		}
 
 		protected PropertyValidator(string errorMessageResourceName, Type errorMessageResourceType) {
-			originalErrorSource = errorSource = new LocalizedStringSource(errorMessageResourceType, errorMessageResourceName);
+			errorMessageResourceName.Guard("errorMessageResourceName must be specified.", nameof(errorMessageResourceName));
+			errorMessageResourceType.Guard("errorMessageResourceType must be specified.", nameof(errorMessageResourceType));
+
+			Options.ErrorMessageSource = new LocalizedStringSource(errorMessageResourceType, errorMessageResourceName);
 		}
 
 		protected PropertyValidator(string errorMessage) {
-			originalErrorSource = errorSource = new StaticStringSource(errorMessage);
-		}
-
-		[Obsolete("Use the constructor that takes a Type resourceType and string resourceName")]
-		protected PropertyValidator(Expression<Func<string>> errorMessageResourceSelector) {
-			originalErrorSource = errorSource = OverridableLocalizedStringSource.CreateFromExpression(errorMessageResourceSelector);
-		}
-
-		public IStringSource ErrorMessageSource {
-			get { return errorSource; }
-			set {
-				if (value == null) {
-					throw new ArgumentNullException("value");
-				}
-
-				errorSource = value;
-
-				if (value is LanguageStringSource) {
-					originalErrorSource = value;
-				}
-			}
+			Options.ErrorMessageSource = new StaticStringSource(errorMessage);
 		}
 
 		public virtual IEnumerable<ValidationFailure> Validate(PropertyValidatorContext context) {
-			if (!IsValid(context)) {
-				PrepareMessageFormatterForValidationError(context);
-				return new[] { CreateValidationError(context) };
-			}
+			if (Options.Condition != null && !Options.Condition(context)) return Enumerable.Empty<ValidationFailure>();
+			if (IsValid(context)) return Enumerable.Empty<ValidationFailure>();
+			
+			PrepareMessageFormatterForValidationError(context);
+			return new[] { CreateValidationError(context) };
 
-			return Enumerable.Empty<ValidationFailure>();
 		}
 
-		public virtual Task<IEnumerable<ValidationFailure>> ValidateAsync(PropertyValidatorContext context, CancellationToken cancellation) {
-			return
-				IsValidAsync(context, cancellation)
-				.Then(valid => {
-					    if (valid) {
-						    return Enumerable.Empty<ValidationFailure>();
-					    }
+		public virtual async Task<IEnumerable<ValidationFailure>> ValidateAsync(PropertyValidatorContext context, CancellationToken cancellation) {
+			if (Options.Condition != null && !Options.Condition(context)) return Enumerable.Empty<ValidationFailure>();
+			if (Options.AsyncCondition != null && !await Options.AsyncCondition(context, cancellation)) return Enumerable.Empty<ValidationFailure>();
+			if (await IsValidAsync(context, cancellation)) return Enumerable.Empty<ValidationFailure>();
+			
+			PrepareMessageFormatterForValidationError(context);
+			return new[] {CreateValidationError(context)};
+		}
 
-						PrepareMessageFormatterForValidationError(context);
-						return new[] { CreateValidationError(context) }.AsEnumerable();
-				      },
-					runSynchronously: true
-				);
+		public virtual bool ShouldValidateAsync(ValidationContext context) {
+			// If the user has applied an async condition, then always go through the async path
+			// even if validator is being run synchronously.
+			if (Options.AsyncCondition != null) return true;
+			return false;
 		}
 
 		protected abstract bool IsValid(PropertyValidatorContext context);
 
+#pragma warning disable 1998
 		protected virtual async Task<bool> IsValidAsync(PropertyValidatorContext context, CancellationToken cancellation) {
 			return IsValid(context);
 		}
+#pragma warning restore 1998
 
 		/// <summary>
 		/// Prepares the <see cref="MessageFormatter"/> of <paramref name="context"/> for an upcoming <see cref="ValidationFailure"/>.
 		/// </summary>
 		/// <param name="context">The validator context</param>
 		protected virtual void PrepareMessageFormatterForValidationError(PropertyValidatorContext context) {
-			context.MessageFormatter.AppendPropertyName(context.PropertyDescription);
+			context.MessageFormatter.AppendPropertyName(context.DisplayName);
 			context.MessageFormatter.AppendPropertyValue(context.PropertyValue);
 		}
 
@@ -124,48 +98,26 @@ namespace FluentValidation.Validators {
 		/// <param name="context">The validator context</param>
 		/// <returns>Returns an error validation result.</returns>
 		protected virtual ValidationFailure CreateValidationError(PropertyValidatorContext context) {
-			Func<PropertyValidatorContext, string> errorBuilder = context.Rule.MessageBuilder ?? BuildErrorMessage;
-			var error = errorBuilder(context);
+			var messageBuilderContext = new MessageBuilderContext(context, Options.ErrorMessageSource, this);
+
+			var error = context.Rule.MessageBuilder != null 
+				? context.Rule.MessageBuilder(messageBuilderContext) 
+				: messageBuilderContext.GetDefaultMessage();
 
 			var failure = new ValidationFailure(context.PropertyName, error, context.PropertyValue);
 			failure.FormattedMessageArguments = context.MessageFormatter.AdditionalArguments;
 			failure.FormattedMessagePlaceholderValues = context.MessageFormatter.PlaceholderValues;
-			failure.ResourceName = errorSource.ResourceName;
-			failure.ErrorCode = (errorCodeSource != null)
-				? errorCodeSource.GetString(context.Instance)
-				: GetType().Name;
+			failure.ResourceName = Options.ErrorMessageSource.ResourceName;
+			failure.ErrorCode = (Options.ErrorCodeSource != null)
+				? Options.ErrorCodeSource.GetString(context)
+				: ValidatorOptions.ErrorCodeResolver(this);
 
-			if (CustomStateProvider != null) {
-				failure.CustomState = CustomStateProvider(context.Instance);
+			if (Options.CustomStateProvider != null) {
+				failure.CustomState = Options.CustomStateProvider(context);
 			}
 
-			failure.Severity = Severity;
+			failure.Severity = Options.Severity;
 			return failure;
-		}
-
-		string BuildErrorMessage(PropertyValidatorContext context) {
-			// Performance: If we got no args we can skip adding nothing to the MessageFormatter.
-			if (this.customFormatArgs != null &&
-				this.customFormatArgs.Count > 0) {
-				var additionalArguments = customFormatArgs.Select(func => func(context.Instance, context.PropertyValue)).ToArray();
-				context.MessageFormatter.AppendAdditionalArguments(additionalArguments);
-			}
-
-			string error = context.MessageFormatter.BuildMessage(errorSource.GetString(context.Instance));
-			return error;
-		}
-
-		public IStringSource ErrorCodeSource {
-			get { return errorCodeSource; }
-			set
-			{
-				if (value == null)
-				{
-					throw new ArgumentNullException("value");
-				}
-
-				errorCodeSource = value;
-			}
 		}
 	}
 }

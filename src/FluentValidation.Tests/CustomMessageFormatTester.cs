@@ -19,6 +19,7 @@
 namespace FluentValidation.Tests {
 	using System;
 	using System.Linq;
+	using Validators;
 	using Xunit;
 
 	
@@ -27,6 +28,7 @@ namespace FluentValidation.Tests {
 
 		public CustomMessageFormatTester() {
 			validator = new TestValidator();
+			CultureScope.SetDefaultCulture();
 		}
 
 		[Fact]
@@ -36,24 +38,6 @@ namespace FluentValidation.Tests {
 			string error = validator.Validate(new Person()).Errors.Single().ErrorMessage;
 			error.ShouldEqual(expected);
         }
-
-		[Fact]
-		public void Should_format_validation_message_with_custom_args() {
-			const string expected = "Property Name: Surname Custom: One, Custom: Two";
-			validator.RuleFor(x => x.Surname).NotNull().WithMessage("Property Name: {PropertyName} Custom: {0}, Custom: {1}", "One", "Two");
-			string error = validator.Validate(new Person()).Errors.Single().ErrorMessage;
-			error.ShouldEqual(expected);
-		}
-
-		[Fact]
-		public void Should_format_validation_with_property_values() {
-			const string expected = "Property Name: Surname Custom: Foo";
-			validator.RuleFor(x => x.Surname).NotNull().WithMessage("Property Name: {PropertyName} Custom: {0}", x => x.Forename);
-			var person = new Person { Forename = "Foo" };
-
-			string error = validator.Validate(person).Errors.Single().ErrorMessage;
-			error.ShouldEqual(expected);
-		}
 
 		[Fact]
 		public void Uses_custom_delegate_for_building_message() {
@@ -66,8 +50,24 @@ namespace FluentValidation.Tests {
 		}
 
 		[Fact]
+		public void Uses_custom_delegate_for_building_message_only_for_specific_validator() {
+			validator.RuleFor(x => x.Surname).NotNull().NotEmpty().Configure(cfg => {
+				cfg.MessageBuilder = context => {
+					if (context.PropertyValidator is NotNullValidator)
+						return "Foo";
+					return context.GetDefaultMessage();
+				};
+			});
+
+			var result = validator.Validate(new Person());
+			result.Errors[0].ErrorMessage.ShouldEqual("Foo");
+			result.Errors[1].ErrorMessage.ShouldEqual("'Surname' must not be empty.");
+		}
+
+
+		[Fact]
 		public void Uses_property_value_in_message() {
-			validator.RuleFor(x => x.Surname).NotEqual("foo").WithMessage("was {0}", (person, name) => name);
+			validator.RuleFor(x => x.Surname).NotEqual("foo").WithMessage(person => $"was {person.Surname}");
 			var error = validator.Validate(new Person { Surname = "foo"}).Errors.Single().ErrorMessage;
 			error.ShouldEqual("was foo");
 		}

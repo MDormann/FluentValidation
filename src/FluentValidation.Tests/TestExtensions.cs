@@ -22,6 +22,7 @@ namespace FluentValidation.Tests {
 	using System.Linq;
 	using Xunit;
 	using Results;
+	using Validators;
 
 	//Inspired by SpecUnit's SpecificationExtensions
 	//http://code.google.com/p/specunit-net/source/browse/trunk/src/SpecUnit/SpecificationExtensions.cs
@@ -55,11 +56,7 @@ namespace FluentValidation.Tests {
 		}
 
 		public static Exception ShouldBeThrownBy(this Type exceptionType,
-#if PORTABLE40
-			Assert.ThrowsDelegate code
-#else
 			Action code
-#endif
 			)
 		{
 			return Assert.Throws(exceptionType, code);

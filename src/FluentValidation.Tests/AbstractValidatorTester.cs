@@ -20,18 +20,21 @@ namespace FluentValidation.Tests {
 	using System;
 	using System.Collections.Generic;
 	using System.Globalization;
+	using System.Linq;
 	using System.Threading;
 	using System.Threading.Tasks;
 	using Xunit;
 	using Results;
 
-	
+
 	public class AbstractValidatorTester {
 		TestValidator validator;
+		TestValidatorWithPreValidate testValidatorWithPreValidate;
 
 		public AbstractValidatorTester() {
 			CultureScope.SetDefaultCulture();
-            validator = new TestValidator();
+			validator = new TestValidator();
+			testValidatorWithPreValidate = new TestValidatorWithPreValidate();
 		}
 
 		[Fact]
@@ -68,6 +71,22 @@ namespace FluentValidation.Tests {
 		}
 
 		[Fact]
+		public void Default_error_code_should_be_class_name() {
+			validator.RuleFor(x => x.Forename).NotNull();
+			var result = validator.Validate(new Person());
+			result.Errors[0].ErrorCode.ShouldEqual("NotNullValidator");
+		}
+
+		[Fact]
+		public void Can_replace_default_errorcode_resolver() {
+			ValidatorOptions.ErrorCodeResolver = x => x.GetType().Name + "_foo";
+			validator.RuleFor(x => x.Forename).NotNull();
+			var result = validator.Validate(new Person());
+			ValidatorOptions.ErrorCodeResolver = null;
+			result.Errors[0].ErrorCode.ShouldEqual("NotNullValidator_foo");
+		}
+
+		[Fact]
 		public void WithErrorCode_should_override_error_code() {
 			validator.RuleFor(x => x.Forename).NotNull().WithErrorCode("ErrCode101");
 			var result = validator.Validate(new Person());
@@ -90,10 +109,24 @@ namespace FluentValidation.Tests {
 		}
 
 		[Fact]
-		public void WithPropertyName_should_override_property_name() {
+		public void WithName_should_override_field_name_with_value_from_other_property() {
+			validator.RuleFor(x => x.Forename).NotNull().WithName(x => x.Surname);
+			var result = validator.Validate(new Person(){Surname = "Foo"});
+			result.Errors[0].ErrorMessage.ShouldEqual("'Foo' must not be empty.");
+		}
+
+		[Fact]
+		public void OverridePropertyName_should_override_property_name() {
 			validator.RuleFor(x => x.Surname).NotNull().OverridePropertyName("foo");
 			var result = validator.Validate(new Person());
 			result.Errors[0].PropertyName.ShouldEqual("foo");
+		}
+		
+		[Fact]
+		public void OverridePropertyName_with_lambda_should_override_property_name() {
+			validator.RuleFor(x => x.Surname).NotNull().OverridePropertyName(x => x.Forename);
+			var result = validator.Validate(new Person());
+			result.Errors[0].PropertyName.ShouldEqual("Forename");
 		}
 
 		[Fact]
@@ -107,17 +140,6 @@ namespace FluentValidation.Tests {
 		[Fact]
 		public void Should_throw_when_rule_is_null() {
 			typeof(ArgumentNullException).ShouldBeThrownBy(() => validator.RuleFor<string>(null));
-		}
-
-		[Fact]
-		public void Should_throw_when_custom_rule_is_null() {
-			typeof(ArgumentNullException).ShouldBeThrownBy(() => validator.Custom((Func<Person, ValidationFailure>)null));
-		}
-
-		[Fact]
-		public void Should_throw_when_customasync_rule_is_null()
-		{
-			typeof(ArgumentNullException).ShouldBeThrownBy(() => validator.CustomAsync((Func<Person, Task<ValidationFailure>>)null));
 		}
 
 		[Fact]
@@ -161,6 +183,20 @@ namespace FluentValidation.Tests {
 			validator.RuleFor(x => x.Surname).NotNull();
 			var result = validator.Validate(new Person(), "Surname1");
 			result.Errors.Count.ShouldEqual(0);
+		}
+
+		[Fact]
+		public void Validates_single_property_by_path() {
+			var addressValidator = new InlineValidator<Address>();
+			addressValidator.RuleFor(x => x.Line1).NotNull();
+			addressValidator.RuleFor(x => x.Line2).NotNull();
+		
+			validator.RuleFor(x => x.Address).SetValidator(addressValidator);
+			validator.RuleFor(x => x.Forename).NotNull();
+
+			var result = validator.Validate(new Person { Address = new Address() }, properties: "Address.Line1");
+			result.Errors.Count.ShouldEqual(1);
+			result.Errors.Single().PropertyName.ShouldEqual("Address.Line1");
 		}
 
 		[Fact]
@@ -214,6 +250,92 @@ namespace FluentValidation.Tests {
 		}
 
 		private class DerivedPerson : Person { }
+
+
+		[Theory]
+		[MemberData(nameof(PreValidationReturnValueTheoryData))]
+		public void WhenPreValidationReturnsFalse_ResultReturnToUserImmediatly_Validate(ValidationResult preValidationResult) {
+			testValidatorWithPreValidate.PreValidateMethod = (context, validationResult) => {
+				foreach (ValidationFailure validationFailure in preValidationResult.Errors) {
+					validationResult.Errors.Add(validationFailure);
+				}
+
+				return false;
+			};
+			testValidatorWithPreValidate.RuleFor(person => person.Age).GreaterThanOrEqualTo(0);
+
+			var result = testValidatorWithPreValidate.Validate(new Person() { Age = -1 });
+
+			Assert.Equal(preValidationResult.Errors.Count, result.Errors.Count);
+			Assert.DoesNotContain(nameof(Person.Age), result.Errors.Select(failure => failure.PropertyName));
+		}
+
+		[Theory]
+		[MemberData(nameof(PreValidationReturnValueTheoryData))]
+		public async Task WhenPreValidationReturnsFalse_ResultReturnToUserImmediatly_ValidateAsync(ValidationResult preValidationResult) {
+			testValidatorWithPreValidate.PreValidateMethod = (context, validationResult) => {
+				foreach (ValidationFailure validationFailure in preValidationResult.Errors) {
+					validationResult.Errors.Add(validationFailure);
+				}
+
+				return false;
+			};
+			testValidatorWithPreValidate.RuleFor(person => person.Age).MustAsync((age, token) => Task.FromResult(age >= 0));
+
+			var result = await testValidatorWithPreValidate.ValidateAsync(new Person() { Age = -1 });
+
+			Assert.Equal(preValidationResult.Errors.Count, result.Errors.Count);
+			Assert.DoesNotContain(nameof(Person.Age), result.Errors.Select(failure => failure.PropertyName));
+		}
+
+		[Fact]
+		public void PreValidate_bypasses_nullcheck_on_instance() {
+			testValidatorWithPreValidate.RuleFor(x => x.Surname).NotNull();
+			testValidatorWithPreValidate.PreValidateMethod = (ctx, r) => false;
+			
+			var result = testValidatorWithPreValidate.Validate((Person)null);
+			result.IsValid.ShouldBeTrue();
+
+		}
+
+		[Fact]
+		public void WhenPreValidationReturnsTrue_ValidatorsGetHit_Validate() {
+			const string testProperty = "TestProperty";
+			const string testMessage = "Test Message";
+			testValidatorWithPreValidate.PreValidateMethod = (context, validationResult) => {
+				validationResult.Errors.Add(new ValidationFailure(testProperty, testMessage));
+				return true;
+			};
+			testValidatorWithPreValidate.RuleFor(person => person.Age).GreaterThanOrEqualTo(0);
+
+			var result = testValidatorWithPreValidate.Validate(new Person() { Age = -1 });
+
+			Assert.Contains(nameof(Person.Age), result.Errors.Select(failure => failure.PropertyName));
+			Assert.Contains(testProperty, result.Errors.Select(failure => failure.PropertyName));
+			Assert.Contains(testMessage, result.Errors.Select(failure => failure.ErrorMessage));
+		}
+
+		[Fact]
+		public async Task WhenPreValidationReturnsTrue_ValidatorsGetHit_ValidateAsync() {
+			const string testProperty = "TestProperty";
+			const string testMessage = "Test Message";
+			testValidatorWithPreValidate.PreValidateMethod = (context, validationResult) => {
+				validationResult.Errors.Add(new ValidationFailure(testProperty, testMessage));
+				return true;
+			};
+			testValidatorWithPreValidate.RuleFor(person => person.Age).MustAsync((age, token) => Task.FromResult(age >= 0));
+
+			var result = await testValidatorWithPreValidate.ValidateAsync(new Person() { Age = -1 });
+
+			Assert.Contains(nameof(Person.Age), result.Errors.Select(failure => failure.PropertyName));
+			Assert.Contains(testProperty, result.Errors.Select(failure => failure.PropertyName));
+			Assert.Contains(testMessage, result.Errors.Select(failure => failure.ErrorMessage));
+		}
+
+		public static TheoryData<ValidationResult> PreValidationReturnValueTheoryData = new TheoryData<ValidationResult> {
+			new ValidationResult(),
+			new ValidationResult(new List<ValidationFailure> {new ValidationFailure(nameof(Person.AnotherInt), $"{nameof(Person.AnotherInt)} Test Message")})
+		};
 
 	}
 }

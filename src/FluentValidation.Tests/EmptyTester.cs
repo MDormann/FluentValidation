@@ -74,7 +74,7 @@ namespace FluentValidation.Tests {
 				v => v.RuleFor(x => x.DateOfBirth).Empty()
 			};
 
-			var result = validator.Validate(new Person { DateOfBirth = default(DateTime) });
+			var result = validator.Validate(new Person { DateOfBirth = default });
 			result.IsValid.ShouldBeTrue();
 		}
 
@@ -108,7 +108,7 @@ namespace FluentValidation.Tests {
 			};
 
 			var result = validator.Validate(new Person { Surname = "Foo" });
-			result.Errors.Single().ErrorMessage.ShouldEqual("'Surname' should be empty.");
+			result.Errors.Single().ErrorMessage.ShouldEqual("'Surname' must be empty.");
 		}
 
 	    [Fact]

@@ -30,7 +30,6 @@ namespace FluentValidation.Tests {
 		public DisplayAttributeTests() {
            CultureScope.SetDefaultCulture();
         }
-#if !PORTABLE40
 		[Fact]
 		public void Infers_display_name_from_DisplayAttribute() {
 			var validator = new InlineValidator<DisplayNameTestModel> {
@@ -40,9 +39,7 @@ namespace FluentValidation.Tests {
 			var result = validator.Validate(new DisplayNameTestModel());
 			result.Errors.Single().ErrorMessage.ShouldEqual("'Foo' must not be empty.");
 		}
-#endif
 
-#if !CoreCLR
 		[Fact]
 		public void Infers_display_name_from_DisplayNameAttribute() {
 			var validator = new InlineValidator<DisplayNameTestModel> {
@@ -52,17 +49,30 @@ namespace FluentValidation.Tests {
 			var result = validator.Validate(new DisplayNameTestModel());
 			result.Errors.Single().ErrorMessage.ShouldEqual("'Bar' must not be empty.");
 		}
-#endif
+
+		[Fact]
+		public void Works_with_Inherited_attribute() {
+			var validator = new InlineValidator<DisplayNameTestModel> {
+				v => v.RuleFor(x => x.Name3).NotNull()
+			};
+
+			var result = validator.Validate(new DisplayNameTestModel());
+			result.Errors.Single().ErrorMessage.ShouldEqual("'Baz' must not be empty.");
+		}
 
         public class DisplayNameTestModel {
-#if !PORTABLE40
 			[Display(Name = "Foo")]
 			public string Name1 { get; set; }
-#endif
-#if !CoreCLR
 			[DisplayName("Bar")]
-#endif
 			public string Name2 { get; set; }
+			[MyDisplay]
+			public string Name3 { get; set; }
+		}
+
+		public class MyDisplay : DisplayNameAttribute {
+			public MyDisplay() : base("Baz") {
+				
+			}
 		}
 	}
 }

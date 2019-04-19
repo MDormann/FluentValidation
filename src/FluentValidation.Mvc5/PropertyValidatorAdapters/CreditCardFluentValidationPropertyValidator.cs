@@ -13,10 +13,10 @@
 		public override IEnumerable<ModelClientValidationRule> GetClientValidationRules() {
 			if (!ShouldGenerateClientSideRules()) yield break;
 
-			var formatter = new MessageFormatter().AppendPropertyName(Rule.GetDisplayName());
+			var formatter = ValidatorOptions.MessageFormatterFactory().AppendPropertyName(Rule.GetDisplayName());
 			string message;
 			try {
-				message = Validator.ErrorMessageSource.GetString(null);
+				message = Validator.Options.ErrorMessageSource.GetString(null);
 			}
 			catch (FluentValidationMessageFormatException) {
 				message = ValidatorOptions.LanguageManager.GetStringForValidator<CreditCardValidator>();

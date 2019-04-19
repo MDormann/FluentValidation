@@ -33,10 +33,10 @@ namespace FluentValidation.AspNetCore {
 		}
 
 		private string GetErrorMessage(ClientModelValidationContext context) {
-			var formatter = new MessageFormatter().AppendPropertyName(Rule.GetDisplayName());
+			var formatter = ValidatorOptions.MessageFormatterFactory().AppendPropertyName(Rule.GetDisplayName());
 			string messageTemplate;
 			try {
-				messageTemplate = Validator.ErrorMessageSource.GetString(null);
+				messageTemplate = Validator.Options.ErrorMessageSource.GetString(null);
 			}
 			catch (FluentValidationMessageFormatException) {
 				messageTemplate = ValidatorOptions.LanguageManager.GetStringForValidator<NotEmptyValidator>();

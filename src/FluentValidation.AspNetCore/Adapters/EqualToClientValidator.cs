@@ -45,13 +45,13 @@ namespace FluentValidation.AspNetCore {
 					ValidatorOptions.DisplayNameResolver(Rule.TypeToValidate, propertyToCompare, null)
 					?? propertyToCompare.Name.SplitPascalCase();
 
-				var formatter = new MessageFormatter()
+				var formatter = ValidatorOptions.MessageFormatterFactory()
 					.AppendPropertyName(Rule.GetDisplayName())
 					.AppendArgument("ComparisonValue", comparisonDisplayName);
 
 				string messageTemplate;
 				try {
-					messageTemplate = EqualValidator.ErrorMessageSource.GetString(null);
+					messageTemplate = EqualValidator.Options.ErrorMessageSource.GetString(null);
 				}
 				catch (FluentValidationMessageFormatException) {
 					messageTemplate = ValidatorOptions.LanguageManager.GetStringForValidator<EqualValidator>();
@@ -59,7 +59,7 @@ namespace FluentValidation.AspNetCore {
 				string message = formatter.BuildMessage(messageTemplate);
 				MergeAttribute(context.Attributes, "data-val", "true");
 				MergeAttribute(context.Attributes, "data-val-equalto", message);
-				MergeAttribute(context.Attributes, "data-val-equalto-other", propertyToCompare.Name);
+				MergeAttribute(context.Attributes, "data-val-equalto-other", "*." + propertyToCompare.Name);
 			}
 		
 		}

@@ -24,8 +24,9 @@ namespace FluentValidation.Tests {
 	using Xunit;
 	using Validators;
 	using System.Collections.Generic;
+	using System.Threading;
 
-	
+
 	public class ValidatorSelectorTests {
 	
 		[Fact]
@@ -39,7 +40,7 @@ namespace FluentValidation.Tests {
 		}
 
 		[Fact]
-		public void Does_not_valdiate_other_property() {
+		public void Does_not_validate_other_property() {
 			var validator = new InlineValidator<TestObject> {
 				v => v.RuleFor(x => x.SomeOtherProperty).NotNull()
 			};
@@ -84,27 +85,64 @@ namespace FluentValidation.Tests {
 
 		[Fact]
 		public void Includes_nested_property() {
-			var validtor = new TestValidator {
+			var validator = new TestValidator {
 				v => v.RuleFor(x => x.Surname).NotNull(),
 				v => v.RuleFor(x => x.Address.Id).NotEqual(0)
 			};
 
-			var result = validtor.Validate(new Person { Address = new Address() }, "Address.Id");
+			var result = validator.Validate(new Person { Address = new Address() }, "Address.Id");
 			result.Errors.Count.ShouldEqual(1);
 			result.Errors[0].PropertyName.ShouldEqual("Address.Id");
 		}
 
 		[Fact]
 		public void Includes_nested_property_using_expression() {
-			var validtor = new TestValidator {
+			var validator = new TestValidator {
 				v => v.RuleFor(x => x.Surname).NotNull(),
 				v => v.RuleFor(x => x.Address.Id).NotEqual(0)
 			};
 
-			var result = validtor.Validate(new Person { Address = new Address() }, x => x.Address.Id);
+			var result = validator.Validate(new Person { Address = new Address() }, x => x.Address.Id);
 			result.Errors.Count.ShouldEqual(1);
 			result.Errors[0].PropertyName.ShouldEqual("Address.Id");
 
+		}
+
+		[Fact]
+		public void Can_use_property_with_include() {
+			var validator = new TestValidator();
+			var validator2 = new TestValidator();
+			validator2.RuleFor(x => x.Forename).NotNull();
+			validator.Include(validator2);
+
+			var result = validator.Validate(new Person(), "Forename");
+			result.IsValid.ShouldBeFalse();
+		}
+
+		[Fact]
+		public void Executes_correct_rule_when_using_property_with_include() {
+			var validator = new TestValidator();
+			var validator2 = new TestValidator();
+			validator2.RuleFor(x => x.Forename).NotNull();
+			validator2.RuleFor(x => x.Surname).NotNull();
+			validator.Include(validator2);
+
+			var result = validator.Validate(new Person(), "Forename");
+			result.Errors.Count.ShouldEqual(1);
+			result.Errors[0].PropertyName.ShouldEqual("Forename");
+		}
+
+		[Fact]
+		public void Executes_correct_rule_when_using_property_with_include_async() {
+			var validator = new TestValidator();
+			var validator2 = new TestValidator();
+			validator2.RuleFor(x => x.Forename).NotNull();
+			validator2.RuleFor(x => x.Surname).NotNull();
+			validator.Include(validator2);
+
+			var result = validator.ValidateAsync(new Person(), default, "Forename").Result;
+			result.Errors.Count.ShouldEqual(1);
+			result.Errors[0].PropertyName.ShouldEqual("Forename");
 		}
 
 		private PropertyRule CreateRule(Expression<Func<TestObject, object>> expression) {

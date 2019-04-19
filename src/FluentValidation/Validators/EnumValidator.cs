@@ -1,4 +1,5 @@
 ﻿#region License
+
 // Copyright (c) Jeremy Skinner (http://www.jeremyskinner.co.uk)
 // 
 // Licensed under the Apache License, Version 2.0 (the "License"); 
@@ -14,32 +15,30 @@
 // limitations under the License.
 // 
 // The latest version of this file can be found at https://github.com/jeremyskinner/FluentValidation
+
 #endregion
 
-namespace FluentValidation.Validators
-{
+namespace FluentValidation.Validators {
 	using System;
 	using System.Reflection;
 	using FluentValidation.Internal;
 	using Resources;
 
-	public class EnumValidator : PropertyValidator
-	{
-		private readonly Type enumType;
+	public class EnumValidator : PropertyValidator {
+		private readonly Type _enumType;
 
 		public EnumValidator(Type enumType) : base(new LanguageStringSource(nameof(EnumValidator))) {
-			this.enumType = enumType;
+			this._enumType = enumType;
 		}
 
 		protected override bool IsValid(PropertyValidatorContext context) {
 			if (context.PropertyValue == null) return true;
 
-			var underlyingEnumType = Nullable.GetUnderlyingType(enumType) ?? enumType;
+			var underlyingEnumType = Nullable.GetUnderlyingType(_enumType) ?? _enumType;
 
 			if (!underlyingEnumType.GetTypeInfo().IsEnum) return false;
 
-			if (underlyingEnumType.GetTypeInfo().GetCustomAttribute<FlagsAttribute>() != null)
-			{
+			if (underlyingEnumType.GetTypeInfo().GetCustomAttribute<FlagsAttribute>() != null) {
 				return IsFlagsEnumDefined(underlyingEnumType, context.PropertyValue);
 			}
 
@@ -49,95 +48,69 @@ namespace FluentValidation.Validators
 		private static bool IsFlagsEnumDefined(Type enumType, object value) {
 			var typeName = Enum.GetUnderlyingType(enumType).Name;
 
-			switch (typeName)
-			{
-				case "Byte":
-					{
-						var typedValue = (byte)value;
-						return EvaluateFlagEnumValues(typedValue, enumType);
-					}
+			switch (typeName) {
+				case "Byte": {
+					var typedValue = (byte) value;
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-				case "Int16":
-					{
-						var typedValue = (short)value;
+				case "Int16": {
+					var typedValue = (short) value;
 
-						if (typedValue < 0)
-						{
-							return false;
-						}
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-						return EvaluateFlagEnumValues(Convert.ToUInt64(typedValue), enumType);
-					}
+				case "Int32": {
+					var typedValue = (int) value;
 
-				case "Int32":
-					{
-						var typedValue = (int)value;
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-						if (typedValue < 0)
-						{
-							return false;
-						}
+				case "Int64": {
+					var typedValue = (long) value;
 
-						return EvaluateFlagEnumValues(Convert.ToUInt64(typedValue), enumType);
-					}
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-				case "Int64":
-					{
-						var typedValue = (long)value;
+				case "SByte": {
+					var typedValue = (sbyte) value;
 
-						if (typedValue < 0)
-						{
-							return false;
-						}
+					return EvaluateFlagEnumValues(Convert.ToInt64(typedValue), enumType);
+				}
 
-						return EvaluateFlagEnumValues(Convert.ToUInt64(typedValue), enumType);
-					}
+				case "UInt16": {
+					var typedValue = (ushort) value;
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-				case "SByte":
-					{
-						var typedValue = (sbyte)value;
+				case "UInt32": {
+					var typedValue = (uint) value;
+					return EvaluateFlagEnumValues(typedValue, enumType);
+				}
 
-						if (typedValue < 0)
-						{
-							return false;
-						}
-
-						return EvaluateFlagEnumValues(Convert.ToUInt64(typedValue), enumType);
-					}
-
-				case "UInt16":
-					{
-						var typedValue = (ushort)value;
-						return EvaluateFlagEnumValues(typedValue, enumType);
-					}
-
-				case "UInt32":
-					{
-						var typedValue = (uint)value;
-						return EvaluateFlagEnumValues(typedValue, enumType);
-					}
-
-				case "UInt64":
-					{
-						var typedValue = (ulong)value;
-						return EvaluateFlagEnumValues(typedValue, enumType);
-					}
+				case "UInt64": {
+					var typedValue = (ulong) value;
+					return EvaluateFlagEnumValues((long) typedValue, enumType);
+				}
 
 				default:
-					var message = string.Format("Unexpected typeName of '{0}' during flags enum evaluation.", typeName);
-					throw new ArgumentOutOfRangeException("typeName", message);
+					var message = $"Unexpected typeName of '{typeName}' during flags enum evaluation.";
+					throw new ArgumentOutOfRangeException(nameof(enumType), message);
 			}
 		}
 
-		private static bool EvaluateFlagEnumValues(ulong value, Type enumType) {
-			ulong mask = 0;
-
+		private static bool EvaluateFlagEnumValues(long value, Type enumType) {
+			long mask = 0;
 			foreach (var enumValue in Enum.GetValues(enumType)) {
-				var enumValueAsUInt64 = Convert.ToUInt64(enumValue);
-				mask = mask | enumValueAsUInt64;
+				var enumValueAsInt64 = Convert.ToInt64(enumValue);
+				if ((enumValueAsInt64 & value) == enumValueAsInt64) {
+					mask |= enumValueAsInt64;
+					if (mask == value)
+						return true;
+				}
 			}
 
-			return (mask & value) == value;
+			return false;
 		}
 	}
 }

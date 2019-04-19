@@ -57,7 +57,7 @@ namespace FluentValidation.Tests {
 			var validator = new TestValidator { v => v.RuleFor(x => x.Forename).Equal("Foo") };
 			var result = validator.Validate(new Person() {Forename = "Bar"});
 			
-			result.Errors.Single().ErrorMessage.ShouldEqual("'Forename' should be equal to 'Foo'.");
+			result.Errors.Single().ErrorMessage.ShouldEqual("'Forename' must be equal to 'Foo'.");
 		}
 
 		[Fact]
@@ -66,11 +66,7 @@ namespace FluentValidation.Tests {
 			var descriptor = validator.CreateDescriptor();
 			var propertyValidator = descriptor.GetValidatorsForMember("Forename").Cast<EqualValidator>().Single();
 
-#if CoreCLR
-			propertyValidator.MemberToCompare.ShouldEqual(typeof (Person).GetRuntimeProperty("Surname"));
-#else
 			propertyValidator.MemberToCompare.ShouldEqual(typeof(Person).GetProperty("Surname"));
-#endif
 		}
 
 		[Fact]

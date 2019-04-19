@@ -60,13 +60,12 @@ namespace FluentValidation.Tests {
 			result.Errors.Single().ErrorMessage.ShouldEqual("The specified condition was not met for 'Forename'.");
 		}
 
-#if!PORTABLE40
 		[Fact]
 		public void When_validation_fails_metadata_should_be_set_on_failure() {
 			var validator = new TestValidator() {
 													v => v.RuleFor(x => x.Forename)
 														.Must(forename => forename == "Jeremy")
-														.WithLocalizedMessage(()=>TestMessages.ValueOfForPropertyNameIsNotValid, x => x.Forename)
+														.WithLocalizedMessage(typeof(TestMessages), nameof(TestMessages.ValueOfForPropertyNameIsNotValid))
 												};
 
 			var result = validator.Validate(new Person() { Forename = "test" });
@@ -77,8 +76,7 @@ namespace FluentValidation.Tests {
 			error.AttemptedValue.ShouldEqual("test");
 			error.ErrorCode.ShouldEqual("PredicateValidator");
 
-			error.FormattedMessageArguments.Length.ShouldEqual(1);
-			error.FormattedMessageArguments[0].ShouldEqual("test");
+			error.FormattedMessageArguments.Length.ShouldEqual(0);
 
 			error.FormattedMessagePlaceholderValues.Count.ShouldEqual(2);
 			error.FormattedMessagePlaceholderValues.ContainsKey("PropertyName").ShouldBeTrue();
@@ -87,6 +85,5 @@ namespace FluentValidation.Tests {
 			error.FormattedMessagePlaceholderValues["PropertyName"].ShouldEqual("Forename");
 			error.FormattedMessagePlaceholderValues["PropertyValue"].ShouldEqual("test");
 		}
-#endif
 	}
 }

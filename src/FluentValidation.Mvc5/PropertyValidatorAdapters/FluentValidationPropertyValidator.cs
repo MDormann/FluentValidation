@@ -7,9 +7,8 @@ namespace FluentValidation.Mvc {
 	using System.Linq;
 
 	public class FluentValidationPropertyValidator : ModelValidator {
-		public IPropertyValidator Validator { get; private set; }
-		public PropertyRule Rule { get; private set; }
-
+		public IPropertyValidator Validator { get; }
+		public PropertyRule Rule { get; }
 
 		/*
 		 This might seem a bit strange, but we do *not* want to do any work in these validators.
@@ -29,10 +28,11 @@ namespace FluentValidation.Mvc {
 			// We also want to ensure we copy across the CustomPropertyName and RuleSet, if specified. 
 			Rule = new PropertyRule(null, x => metadata.Model, null, null, metadata.ModelType, null) {
 				PropertyName = metadata.PropertyName,
-				DisplayName = rule == null ? null : rule.DisplayName,
-				RuleSet = rule == null ? null : rule.RuleSet
+				DisplayName = rule?.DisplayName,
+				RuleSets = rule?.RuleSets
 			};
 		}
+
 
 		public override IEnumerable<ModelValidationResult> Validate(object container) {
 			if (ShouldValidate) {
@@ -57,8 +57,9 @@ namespace FluentValidation.Mvc {
 
 		protected virtual bool ShouldGenerateClientSideRules() {
 			var ruleSetToGenerateClientSideRules = RuleSetForClientSideMessagesAttribute.GetRuleSetsForClientValidation(ControllerContext.HttpContext);
-			bool executeDefaultRule = (ruleSetToGenerateClientSideRules.Contains("default", StringComparer.OrdinalIgnoreCase) && string.IsNullOrEmpty(Rule.RuleSet));
-			return ruleSetToGenerateClientSideRules.Contains(Rule.RuleSet) || executeDefaultRule ;
+			bool executeDefaultRule = (ruleSetToGenerateClientSideRules.Contains("default", StringComparer.OrdinalIgnoreCase) 
+			                           && (Rule.RuleSets.Length == 0 || Rule.RuleSets.Contains("default", StringComparer.OrdinalIgnoreCase)));
+			return ruleSetToGenerateClientSideRules.Intersect(Rule.RuleSets, StringComparer.OrdinalIgnoreCase).Any() || executeDefaultRule ;
 		}
 
 		public override IEnumerable<ModelClientValidationRule> GetClientValidationRules() {

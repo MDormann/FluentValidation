@@ -31,11 +31,11 @@ namespace FluentValidation.AspNetCore {
 		}
 
 		public override void AddValidation(ClientModelValidationContext context) {
-			var formatter = new MessageFormatter().AppendPropertyName(Rule.GetDisplayName());
+			var formatter = ValidatorOptions.MessageFormatterFactory().AppendPropertyName(Rule.GetDisplayName());
 
 			string messageTemplate;
 			try {
-				messageTemplate = EmailValidator.ErrorMessageSource.GetString(null);
+				messageTemplate = Validator.Options.ErrorMessageSource.GetString(null);
 			}
 			catch (FluentValidationMessageFormatException) {
 				messageTemplate = ValidatorOptions.LanguageManager.GetStringForValidator<EmailValidator>();

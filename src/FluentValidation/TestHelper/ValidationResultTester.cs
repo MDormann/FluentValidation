@@ -20,29 +20,46 @@ namespace FluentValidation.TestHelper {
 	using System.Collections.Generic;
 	using System.Linq;
 	using System.Reflection;
-	using Results;
+    using System.Text.RegularExpressions;
+    using Results;
 
-	class ValidationResultTester<T, TValue> : IValidationResultTester where T : class {
-		readonly TestValidationResult<T, TValue> testValidationResult;
+	internal class ValidationResultTester<T, TValue> : IValidationResultTester where T : class {
+		private readonly TestValidationResult<T, TValue> _testValidationResult;
 
 		public ValidationResultTester(TestValidationResult<T, TValue> testValidationResult) {
-			this.testValidationResult = testValidationResult;
+			_testValidationResult = testValidationResult;
 		}
 
-		string GetPropertyName(IEnumerable<MemberInfo> properties) {
-			return string.Join(".", new[] {testValidationResult.MemberAccessor != null ? testValidationResult.MemberAccessor.Member : null}
-				.Concat(properties)
+		private string GetPropertyName(IEnumerable<MemberInfo> properties) {
+			return string.Join(".", 
+                GetMemberNames().Concat(properties
 				.Where(x => x != null)
-				.Select(x => x.Name));
+				.Select(x => x.Name)));
 		}
 
-		public IEnumerable<ValidationFailure> ShouldHaveValidationError(IEnumerable<MemberInfo> properties) {
+	    private IEnumerable<string> GetMemberNames() {
+	        if (_testValidationResult.MemberAccessor == null) {
+		        yield break;
+	        }
+
+		    string memberName = ValidatorOptions.PropertyNameResolver(
+			    typeof(T), 
+			    _testValidationResult.MemberAccessor.Member,  
+			    _testValidationResult.MemberAccessor
+			);
+
+		    if (!string.IsNullOrEmpty(memberName)) {
+			    yield return memberName;
+		    }
+	    }
+
+        public IEnumerable<ValidationFailure> ShouldHaveValidationError(IEnumerable<MemberInfo> properties) {
 			var propertyName = GetPropertyName(properties);
 
-			var failures = testValidationResult.Result.Errors.Where(x => x.PropertyName == propertyName || string.IsNullOrEmpty(propertyName)).ToArray();
+			var failures = _testValidationResult.Result.Errors.Where(x => NormalizePropertyName(x.PropertyName) == propertyName || string.IsNullOrEmpty(propertyName)).ToArray();
 
 			if (!failures.Any())
-				throw new ValidationTestException(string.Format("Expected a validation error for property {0}", propertyName));
+				throw new ValidationTestException($"Expected a validation error for property {propertyName}");
 
 			return failures;
 		}
@@ -50,8 +67,21 @@ namespace FluentValidation.TestHelper {
 		public void ShouldNotHaveValidationError(IEnumerable<MemberInfo> properties) {
 			var propertyName = GetPropertyName(properties);
 
-			if (testValidationResult.Result.Errors.Any(x => x.PropertyName == propertyName || string.IsNullOrEmpty(propertyName)))
-				throw new ValidationTestException(string.Format("Expected no validation errors for property {0}", propertyName));
+			var failures = _testValidationResult.Result.Errors.Where(x => NormalizePropertyName(x.PropertyName) == propertyName || string.IsNullOrEmpty(propertyName)).ToList();
+
+			if (failures.Any()) {
+				var errorMessageBanner = $"Expected no validation errors for property {propertyName}";
+				string errorMessageDetails = "";
+				for (int i = 0; i < failures.Count; i++) {
+					errorMessageDetails += $"[{i}]: {failures[i].ErrorMessage}\n";
+				}
+				var errorMessage = $"{errorMessageBanner}\n----\nValidation Errors:\n{errorMessageDetails}";
+				throw new ValidationTestException(errorMessage, failures);
+			}
+		}
+
+		private static string NormalizePropertyName(string propertyName) {
+			return Regex.Replace(propertyName, @"\[.*\]", string.Empty);
 		}
 	}
 }

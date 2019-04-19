@@ -18,13 +18,11 @@
 
 namespace FluentValidation.Validators {
 	using System;
-	using System.Linq.Expressions;
-	using Attributes;
 	using Resources;
 
 	public class LengthValidator : PropertyValidator, ILengthValidator {
-		public int Min { get; private set; }
-		public int Max { get; private set; }
+		public int Min { get; }
+		public int Max { get; }
 
 		public Func<object, int> MinFunc { get; set; }
 		public Func<object, int> MaxFunc { get; set; }
@@ -34,7 +32,7 @@ namespace FluentValidation.Validators {
 			Min = min;
 
 			if (max != -1 && max < min) {
-				throw new ArgumentOutOfRangeException("max", "Max should be larger than min.");
+				throw new ArgumentOutOfRangeException(nameof(max), "Max should be larger than min.");
 			}
 		}
 
@@ -49,7 +47,7 @@ namespace FluentValidation.Validators {
 			Min = min;
 
 			if (max != -1 && max < min) {
-				throw new ArgumentOutOfRangeException("max", "Max should be larger than min.");
+				throw new ArgumentOutOfRangeException(nameof(max), "Max should be larger than min.");
 			}
 		}
 

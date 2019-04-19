@@ -19,9 +19,9 @@ namespace FluentValidation.Resources {
 	using System.Collections.Generic;
 
 	/// <summary>
-	/// Base class for lanaguages
+	/// Base class for languages
 	/// </summary>
-	internal abstract class Language {
+	public abstract class Language {
 
 		/// <summary>
 		/// Name of language (culture code)
@@ -61,6 +61,10 @@ namespace FluentValidation.Resources {
 			}
 
 			return null;
+		}
+
+		internal IEnumerable<string> GetSupportedKeys() {
+			return _translations.Keys;
 		}
 	}
 

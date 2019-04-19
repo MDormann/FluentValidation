@@ -29,14 +29,20 @@ namespace FluentValidation.WebApi {
 		/// </summary>
 		/// <param name="result">The validation result to store</param>
 		/// <param name="modelState">The ModelStateDictionary to store the errors in.</param>
-		/// <param name="prefix">An optional prefix. If ommitted, the property names will be the keys. If specified, the prefix will be concatenatd to the property name with a period. Eg "user.Name"</param>
+		/// <param name="prefix">An optional prefix. If omitted, the property names will be the keys. If specified, the prefix will be concatenated to the property name with a period. Eg "user.Name"</param>
 		public static void AddToModelState(this ValidationResult result, ModelStateDictionary modelState, string prefix) {
 			if (!result.IsValid) {
 				foreach (var error in result.Errors) {
 					string key = string.IsNullOrEmpty(prefix) ? error.PropertyName : prefix + "." + error.PropertyName;
-					modelState.AddModelError(key, error.ErrorMessage);
-					//To work around an issue with MVC: SetModelValue must be called if AddModelError is called.
-					modelState.SetModelValue(key, new ValueProviderResult(error.AttemptedValue ?? "", (error.AttemptedValue ?? "").ToString(), CultureInfo.CurrentCulture));
+
+					if (modelState.ContainsKey(key)) {
+						modelState[key].Errors.Add(error.ErrorMessage);
+					}
+					else {
+						modelState.AddModelError(key, error.ErrorMessage);
+						//To work around an issue with MVC: SetModelValue must be called if AddModelError is called.
+						modelState.SetModelValue(key, new ValueProviderResult(error.AttemptedValue ?? "", (error.AttemptedValue ?? "").ToString(), CultureInfo.CurrentCulture));
+					}
 				}
 			}
 		}

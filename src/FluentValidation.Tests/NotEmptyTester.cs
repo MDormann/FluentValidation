@@ -76,7 +76,7 @@ namespace FluentValidation.Tests {
 				v => v.RuleFor(x => x.DateOfBirth).NotEmpty()
 			};
 
-			var result = validator.Validate(new Person { DateOfBirth = default(DateTime) });
+			var result = validator.Validate(new Person { DateOfBirth = default });
 			result.IsValid.ShouldBeFalse();
 		}
 
@@ -110,7 +110,7 @@ namespace FluentValidation.Tests {
 			};
 
 			var result = validator.Validate(new Person { Surname = null });
-			result.Errors.Single().ErrorMessage.ShouldEqual("'Surname' should not be empty.");
+			result.Errors.Single().ErrorMessage.ShouldEqual("'Surname' must not be empty.");
 		}
 
 	    [Fact]
@@ -122,6 +122,14 @@ namespace FluentValidation.Tests {
 	        var result = validator.Validate(new TestModel());
             result.IsValid.ShouldBeFalse();
 	    }
+
+		[Fact]
+		public void Fails_for_array() {
+			var validator = new InlineValidator<string[]>();
+			validator.RuleFor(x => x).NotEmpty();
+			var result = validator.Validate(new string[0]);
+			result.IsValid.ShouldBeFalse();
+		}
 
         public class TestModel {
             public IEnumerable<string> Strings {

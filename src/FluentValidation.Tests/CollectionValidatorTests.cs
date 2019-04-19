@@ -24,9 +24,13 @@ namespace FluentValidation.Tests {
 
 	
 	public class CollectionValidatorTests {
-		Person person;
+		private Person person;
+		private object _lock = new object();
+		private int _counter;
 
 		public CollectionValidatorTests() {
+			_counter = 0;
+			
 			person = new Person() {
 				Orders = new List<Order>() {
 					new Order { Amount = 5},
@@ -95,7 +99,7 @@ namespace FluentValidation.Tests {
 		[Fact]
 	    public void Async_condition_should_work_with_child_collection() {
 	        var validator = new TestValidator() {
-	                                                v => v.RuleFor(x => x.Orders).SetCollectionValidator(new OrderValidator()).WhenAsync(async x => x.Orders.Count == 3 /*there are only 2*/)
+	                                                v => v.RuleFor(x => x.Orders).SetCollectionValidator(new OrderValidator()).WhenAsync(async (x,c) => x.Orders.Count == 3 /*there are only 2*/)
 	                                            };
 
 	        var result = validator.ValidateAsync(person).Result;
@@ -125,7 +129,7 @@ namespace FluentValidation.Tests {
 		}
 
 		[Fact]
-		public void Can_specifiy_condition_for_individual_collection_elements() {
+		public void Can_specify_condition_for_individual_collection_elements() {
 			var validator = new TestValidator {
 				v => v.RuleFor(x => x.Orders)
 					.SetCollectionValidator(new OrderValidator())
@@ -161,7 +165,49 @@ namespace FluentValidation.Tests {
 			result.Errors.Count.ShouldEqual(4);
 			result.Errors[0].PropertyName.ShouldEqual("x[0].ProductName");
 		}
+		
+		[Fact]
+		public void Validates_child_validator_synchronously() {
+			var validator = new ComplexValidationTester.TracksAsyncCallValidator<Person>();
+			var childValidator = new ComplexValidationTester.TracksAsyncCallValidator<Person>();
+			childValidator.RuleFor(x => x.Forename).NotNull();
+			validator.RuleFor(x => x.Children).SetCollectionValidator(childValidator);
+
+			validator.Validate(new Person() { Children = new List<Person> { new Person() }});
+			childValidator.WasCalledAsync.ShouldEqual(false);
+		}
+
+		[Fact]
+		public async Task Validates_child_validator_asynchronously() {
+			var validator = new ComplexValidationTester.TracksAsyncCallValidator<Person>();
+			var childValidator = new ComplexValidationTester.TracksAsyncCallValidator<Person>();
+			childValidator.RuleFor(x => x.Forename).NotNull();
+			validator.RuleFor(x => x.Children).SetCollectionValidator(childValidator);
+
+			await validator.ValidateAsync(new Person() {Children = new List<Person> {new Person()}});
+			childValidator.WasCalledAsync.ShouldEqual(true);
+		}
 	
+		[Fact]
+		public async Task Collection_async_RunsTasksSynchronously() {
+			var result = new List<bool>();
+			var validator = new InlineValidator<Person>();
+			var orderValidator = new InlineValidator<Order>();
+		
+			orderValidator.RuleFor(x => x.ProductName).MustAsync((x, token) => {
+				return ExclusiveDelay(1)
+					.ContinueWith(t => result.Add(t.Result))
+					.ContinueWith(t => true);
+			});
+
+			validator.RuleFor(x => x.Orders).SetCollectionValidator(orderValidator);
+			
+			await validator.ValidateAsync(person);
+
+			Assert.NotEmpty(result);
+			Assert.All(result, Assert.True);
+		}
+		
 		public class OrderValidator : AbstractValidator<Order> {
 			public OrderValidator() {
 				RuleFor(x => x.ProductName).NotEmpty();
@@ -173,6 +219,21 @@ namespace FluentValidation.Tests {
 			public OrderInterfaceValidator() {
 				RuleFor(x => x.Amount).NotEqual(0);
 			}
+		}
+		
+		private async Task<bool> ExclusiveDelay(int milliseconds) {
+			lock (_lock) {
+				if (_counter != 0) return false;
+				_counter += 1;
+			}
+
+			await Task.Delay(milliseconds);
+
+			lock (_lock) {
+				_counter -= 1;
+			}
+
+			return true;
 		}
 	}
 }

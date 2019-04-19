@@ -30,22 +30,31 @@ namespace FluentValidation.Validators {
 	/// Please inherit from <see cref="PropertyValidator">PropertyValidator</see> instead.
 	/// </summary>
 	public interface IPropertyValidator {
-		bool IsAsync { get; }
-
+		/// <summary>
+		/// Performs validation
+		/// </summary>
+		/// <param name="context"></param>
+		/// <returns></returns>
 		IEnumerable<ValidationFailure> Validate(PropertyValidatorContext context);
-
+		
+		/// <summary>
+		/// Performs validation asynchronously.
+		/// </summary>
+		/// <param name="context"></param>
+		/// <param name="cancellation"></param>
+		/// <returns></returns>
 		Task<IEnumerable<ValidationFailure>> ValidateAsync(PropertyValidatorContext context, CancellationToken cancellation);
 
 		/// <summary>
-		/// Custom message arguments. 
-		/// Arg 1: Instance being validated
-		/// Arg 2: Property value
+		/// Determines whether this validator should be run asynchronously or not.
 		/// </summary>
-		[Obsolete("Use WithMessage/WithName overloads that take an explicit delegate rather than a collection of args.")]
-		ICollection<Func<object, object, object>> CustomMessageFormatArguments { get; }
-		Func<object, object> CustomStateProvider { get; set; }
-		Severity Severity { get; set; }
-		IStringSource ErrorMessageSource { get; set; }
-		IStringSource ErrorCodeSource { get; set; }
+		/// <param name="context"></param>
+		/// <returns></returns>
+		bool ShouldValidateAsync(ValidationContext context);
+		
+		/// <summary>
+		/// Additional options for configuring the property validator.
+		/// </summary>
+		PropertyValidatorOptions Options { get; }
 	}
 }

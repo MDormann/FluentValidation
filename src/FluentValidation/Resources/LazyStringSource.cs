@@ -17,17 +17,18 @@
 #endregion
 namespace FluentValidation.Resources {
 	using System;
+	using Validators;
 
 	/// <summary>
 	/// Lazily loads the string
 	/// </summary>
 	public class LazyStringSource : IStringSource {
-		readonly Func<object, string> _stringProvider;
+		readonly Func<IValidationContext, string> _stringProvider;
 
 		/// <summary>
 		/// Creates a LazyStringSource
 		/// </summary>
-		public LazyStringSource(Func<object, string> stringProvider) {
+		public LazyStringSource(Func<IValidationContext, string> stringProvider) {
 			_stringProvider = stringProvider;
 		}
 
@@ -35,7 +36,7 @@ namespace FluentValidation.Resources {
 		/// Gets the value
 		/// </summary>
 		/// <returns></returns>
-		public string GetString(object context) {
+		public string GetString(IValidationContext context) {
 			try {
 				return _stringProvider(context);
 			}
@@ -47,13 +48,12 @@ namespace FluentValidation.Resources {
 		/// <summary>
 		/// Resource type
 		/// </summary>
-		public string ResourceName { get { return null; } }
+		public string ResourceName => null;
 
 		/// <summary>
 		/// Resource name
 		/// </summary>
-		public Type ResourceType { get { return null; } }
-
+		public Type ResourceType => null;
 	}
 
 	public class FluentValidationMessageFormatException : Exception {

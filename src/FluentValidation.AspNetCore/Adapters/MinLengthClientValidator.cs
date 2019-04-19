@@ -33,22 +33,22 @@ namespace FluentValidation.AspNetCore {
 
 	    private string GetErrorMessage(LengthValidator lengthVal, ClientModelValidationContext context) {
 
-		    var formatter = new MessageFormatter()
+		    var formatter = ValidatorOptions.MessageFormatterFactory()
 			    .AppendPropertyName(Rule.GetDisplayName())
 			    .AppendArgument("MinLength", lengthVal.Min)
 			    .AppendArgument("MaxLength", lengthVal.Max);
 
-		    bool messageNeedsSplitting = lengthVal.ErrorMessageSource.ResourceType == typeof(LanguageManager);
+		    bool messageNeedsSplitting = lengthVal.Options.ErrorMessageSource is LanguageStringSource;
 
 		    string message;
 		    try {
-			    message = lengthVal.ErrorMessageSource.GetString(null);
+			    message = lengthVal.Options.ErrorMessageSource.GetString(null);
 		    } catch (FluentValidationMessageFormatException) {
 				message = ValidatorOptions.LanguageManager.GetStringForValidator<MinimumLengthValidator>();
 			    messageNeedsSplitting = true;
 		    }
 
-		    if (messageNeedsSplitting) {
+		    if (messageNeedsSplitting && message.Contains(".") && message.Contains("{TotalLength}")) {
 			    // If we're using the default resources then the mesage for length errors will have two parts, eg:
 			    // '{PropertyName}' must be between {MinLength} and {MaxLength} characters. You entered {TotalLength} characters.
 			    // We can't include the "TotalLength" part of the message because this information isn't available at the time the message is constructed.

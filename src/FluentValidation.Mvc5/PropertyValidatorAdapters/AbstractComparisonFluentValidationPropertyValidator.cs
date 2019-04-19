@@ -24,12 +24,12 @@
         public override IEnumerable<ModelClientValidationRule> GetClientValidationRules() {
             if (!ShouldGenerateClientSideRules()) yield break;
 
-            var formatter = new MessageFormatter()
+            var formatter = ValidatorOptions.MessageFormatterFactory()
                 .AppendPropertyName(Rule.GetDisplayName())
                 .AppendArgument("ComparisonValue", AbstractComparisonValidator.ValueToCompare);
             string message;
 	        try {
-		        message = AbstractComparisonValidator.ErrorMessageSource.GetString(null);
+		        message = AbstractComparisonValidator.Options.ErrorMessageSource.GetString(null);
 	        }
 	        catch (FluentValidationMessageFormatException) {
 		        message = GetDefaultMessage();

@@ -1,4 +1,5 @@
 #region License
+
 // Copyright (c) Jeremy Skinner (http://www.jeremyskinner.co.uk)
 // 
 // Licensed under the Apache License, Version 2.0 (the "License"); 
@@ -14,6 +15,7 @@
 // limitations under the License.
 // 
 // The latest version of this file can be found at https://github.com/jeremyskinner/FluentValidation
+
 #endregion
 
 namespace FluentValidation {
@@ -22,31 +24,42 @@ namespace FluentValidation {
 	using System.Collections.Generic;
 	using System.Linq;
 	using System.Reflection;
-    using Internal;
+	using Internal;
 
-#if (!PORTABLE && !PORTABLE40)
 	/// <summary>
 	/// Class that can be used to find all the validators from a collection of types.
 	/// </summary>
 	public class AssemblyScanner : IEnumerable<AssemblyScanner.AssemblyScanResult> {
-		readonly IEnumerable<Type> types;
+		readonly IEnumerable<Type> _types;
 
 		/// <summary>
 		/// Creates a scanner that works on a sequence of types.
 		/// </summary>
 		public AssemblyScanner(IEnumerable<Type> types) {
-			this.types = types;
+			_types = types;
 		}
 
 		/// <summary>
 		/// Finds all the validators in the specified assembly.
 		/// </summary>
 		public static AssemblyScanner FindValidatorsInAssembly(Assembly assembly) {
-#if NETSTANDARD1_0
+#if NETSTANDARD1_1
 			return new AssemblyScanner(assembly.ExportedTypes);
 #else
 			return new AssemblyScanner(assembly.GetExportedTypes());
 #endif
+		}
+
+		/// <summary>
+		/// Finds all the validators in the specified assemblies
+		/// </summary>
+		public static AssemblyScanner FindValidatorsInAssemblies(IEnumerable<Assembly> assemblies) {
+#if NETSTANDARD1_1
+			var types = assemblies.SelectMany(x => x.ExportedTypes.Distinct());
+#else
+			var types = assemblies.SelectMany(x => x.GetExportedTypes().Distinct());
+#endif
+			return new AssemblyScanner(types);
 		}
 
 		/// <summary>
@@ -56,18 +69,27 @@ namespace FluentValidation {
 			return FindValidatorsInAssembly(typeof(T).GetTypeInfo().Assembly);
 		}
 
+		/// <summary>
+		/// Finds all the validators in the assembly containing the specified type.
+		/// </summary>
+		public static AssemblyScanner FindValidatorsInAssemblyContaining(Type type) {
+			return FindValidatorsInAssembly(type.GetTypeInfo().Assembly);
+		}
+
 		private IEnumerable<AssemblyScanResult> Execute() {
 			var openGenericType = typeof(IValidator<>);
 
-#if NETSTANDARD1_0
-			var query = from type in types
-						let interfaces = type.GetTypeInfo().ImplementedInterfaces
-						let genericInterfaces = interfaces.Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == openGenericType)
-						let matchingInterface = genericInterfaces.FirstOrDefault()
-						where matchingInterface != null
-						select new AssemblyScanResult(matchingInterface, type);
+#if NETSTANDARD1_1 || NETSTANDARD1_6
+			var query = from type in _types
+				where !type.GetTypeInfo().IsAbstract && !type.GetTypeInfo().IsGenericTypeDefinition
+				let interfaces = type.GetTypeInfo().ImplementedInterfaces
+				let genericInterfaces = interfaces.Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == openGenericType)
+				let matchingInterface = genericInterfaces.FirstOrDefault()
+				where matchingInterface != null
+				select new AssemblyScanResult(matchingInterface, type);
 #else
-			var query = from type in types
+			var query = from type in _types
+						where !type.IsAbstract && !type.IsGenericTypeDefinition
 						let interfaces = type.GetInterfaces()
 						let genericInterfaces = interfaces.Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == openGenericType)
 						let matchingInterface = genericInterfaces.FirstOrDefault()
@@ -81,7 +103,7 @@ namespace FluentValidation {
 		/// Performs the specified action to all of the assembly scan results.
 		/// </summary>
 		public void ForEach(Action<AssemblyScanResult> action) {
-			foreach(var result in this) {
+			foreach (var result in this) {
 				action(result);
 			}
 		}
@@ -117,12 +139,11 @@ namespace FluentValidation {
 			/// Validator interface type, eg IValidator&lt;Foo&gt;
 			/// </summary>
 			public Type InterfaceType { get; private set; }
+
 			/// <summary>
 			/// Concrete type that implements the InterfaceType, eg FooValidator.
 			/// </summary>
 			public Type ValidatorType { get; private set; }
 		}
-
 	}
-#endif
-		}
+}

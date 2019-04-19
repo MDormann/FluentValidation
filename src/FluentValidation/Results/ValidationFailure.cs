@@ -23,7 +23,7 @@ namespace FluentValidation.Results {
 	/// <summary>
 	/// Defines a validation failure
 	/// </summary>
-#if !PORTABLE && !PORTABLE40 && !NETSTANDARD1_0
+#if !NETSTANDARD1_1 && !NETSTANDARD1_6
 	[Serializable]
 #endif
 	public class ValidationFailure {
@@ -34,32 +34,32 @@ namespace FluentValidation.Results {
 		/// <summary>
 		/// Creates a new validation failure.
 		/// </summary>
-		public ValidationFailure(string propertyName, string error) : this(propertyName, error, null) {
+		public ValidationFailure(string propertyName, string errorMessage) : this(propertyName, errorMessage, null) {
 		}
 
 		/// <summary>
 		/// Creates a new ValidationFailure.
 		/// </summary>
-		public ValidationFailure(string propertyName, string error, object attemptedValue) {
+		public ValidationFailure(string propertyName, string errorMessage, object attemptedValue) {
 			PropertyName = propertyName;
-			ErrorMessage = error;
+			ErrorMessage = errorMessage;
 			AttemptedValue = attemptedValue;
 		}
 
 		/// <summary>
 		/// The name of the property.
 		/// </summary>
-		public string PropertyName { get; private set; }
+		public string PropertyName { get; set; }
 		
 		/// <summary>
 		/// The error message
 		/// </summary>
-		public string ErrorMessage { get; private set; }
+		public string ErrorMessage { get; set; }
 		
 		/// <summary>
 		/// The property value that caused the failure.
 		/// </summary>
-		public object AttemptedValue { get; private set; }
+		public object AttemptedValue { get; set; }
 		
 		/// <summary>
 		/// Custom state associated with the failure.
@@ -86,7 +86,6 @@ namespace FluentValidation.Results {
 
 		/// <summary>
 		/// Gets or sets the formatted message placeholder values.
-		/// Similar placeholders are defined in fluent validation library (check documentation)
 		/// </summary>
 		public Dictionary<string, object> FormattedMessagePlaceholderValues { get; set; }
 

@@ -1,4 +1,5 @@
 ﻿#region License
+
 // Copyright (c) Jeremy Skinner (http://www.jeremyskinner.co.uk)
 // 
 // Licensed under the Apache License, Version 2.0 (the "License"); 
@@ -14,270 +15,134 @@
 // limitations under the License.
 // 
 // The latest version of this file can be found at https://github.com/jeremyskinner/FluentValidation
+
 #endregion
 
-namespace FluentValidation.WebApi
-{
+namespace FluentValidation.WebApi {
 	using System;
-	using System.Collections;
 	using System.Collections.Generic;
-	using System.Diagnostics.Contracts;
-	using System.Globalization;
 	using System.Linq;
-	using System.Net.Http.Formatting;
 	using System.Web.Http.Controllers;
 	using System.Web.Http.Metadata;
-	using System.Web.Http.ModelBinding;
 	using System.Web.Http.Validation;
 
-	/// <summary>
-	/// Recursively validate an object.
-	/// Is just a copy of the DefaultBodyModelValidator but includes a "patch" for the FluentValidationModelValidator
-	/// When the whole model is validated the errors get added to the ModelState grouped by property instead of all under
-	/// the model. It also changes the check of previous errors to avoid missing error messages when there are bind errors
-	/// If the FluentValidationModelValidator is not used to validate, fallbacks to the DefaultBodyModelValidator behaviour
-	/// Another difference is that the IModelValidatorCache had to be removed because it's internal to the asp net framework
-	/// (affects performance but not the behaviour)
-	/// </summary>
-	public class FluentValidationBodyModelValidator : IBodyModelValidator {
-		private interface IKeyBuilder {
-			string AppendTo(string prefix);
+	public class FluentValidationBodyModelValidator : DefaultBodyModelValidator, IBodyModelValidator {
+		private bool ImplicitlyValidateChildProperties { get; set; }
+
+		public FluentValidationBodyModelValidator(bool implicitlyValidateChildProperties = true) {
+			ImplicitlyValidateChildProperties = implicitlyValidateChildProperties;
 		}
 
-		public bool Validate(object model, Type type, ModelMetadataProvider metadataProvider, HttpActionContext actionContext, string keyPrefix) {
-			if (type == null) {
-				throw new ArgumentNullException("type");
+		bool IBodyModelValidator.Validate(object model, Type type, ModelMetadataProvider metadataProvider, HttpActionContext actionContext, string keyPrefix) {
+			var customizations = actionContext.ActionDescriptor.GetParameters().Where(x => x.ParameterName == keyPrefix)
+				.Select(x => x.GetCustomAttributes<CustomizeValidatorAttribute>().FirstOrDefault())
+				.FirstOrDefault();
+
+			if (customizations != null) {
+				actionContext.Request.Properties["_FV_Customizations"] = customizations;
 			}
 
-			if (metadataProvider == null) {
-				throw new ArgumentNullException("metadataProvider");
-			}
-
-			if (actionContext == null) {
-				throw new ArgumentNullException("actionContext");
-			}
-
-			if (model != null && MediaTypeFormatterCollection.IsTypeExcludedFromValidation(model.GetType())) {
-				// no validation for some DOM like types
-				return true;
-			}
-
-			ModelValidatorProvider[] validatorProviders = actionContext.GetValidatorProviders().ToArray();
-			// Optimization : avoid validating the object graph if there are no validator providers
-			if (validatorProviders == null || validatorProviders.Length == 0) {
-				return true;
-			}
-
-			ModelMetadata metadata = metadataProvider.GetMetadataForType(() => model, type);
-			ValidationContext validationContext = new ValidationContext {
-				MetadataProvider = metadataProvider,
-				ActionContext = actionContext,
-				ModelState = actionContext.ModelState,
-				Visited = new HashSet<object>(),
-				KeyBuilders = new Stack<IKeyBuilder>(),
-				RootPrefix = keyPrefix
-			};
-			return this.ValidateNodeAndChildren(metadata, validationContext, container: null);
+			return base.Validate(model, type, metadataProvider, actionContext, keyPrefix);
 		}
 
-		internal static bool IsSimpleType(Type type)
-		{
-            return type.IsPrimitive ||
-                   (type.IsArray && type.GetElementType().IsPrimitive) ||
-                   type.Equals(typeof(string)) ||
-				   type.Equals(typeof(DateTime)) ||
-				   type.Equals(typeof(Decimal)) ||
-				   type.Equals(typeof(Guid)) ||
-				   type.Equals(typeof(DateTimeOffset)) ||
-				   type.Equals(typeof(TimeSpan));
-        }
-		
-		private bool ValidateNodeAndChildren(ModelMetadata metadata, ValidationContext validationContext, object container) {
+		protected override bool ValidateNodeAndChildren(ModelMetadata metadata, BodyModelValidatorContext validationContext, object container, IEnumerable<ModelValidator> validators) {
+			CustomizeValidatorAttribute customizations = null;
 
+			if (validationContext.ActionContext.Request.Properties.ContainsKey("_FV_Customizations")) {
+				customizations = validationContext.ActionContext.Request.Properties["_FV_Customizations"] as CustomizeValidatorAttribute;
+			}
+
+			if (customizations == null) customizations = new CustomizeValidatorAttribute();
+
+			if (validators == null)
+				validators = GetValidators(validationContext.ActionContext, metadata, validationContext.ValidatorCache);
+
+			validators = ApplyCustomizationsToValidators(validators, customizations, validationContext.ActionContext);
+
+			bool isValid = !ImplicitlyValidateChildProperties || base.ValidateNodeAndChildren(metadata, validationContext, container, validators);
+
+			var model = GetModel(metadata);
+
+			if ((!isValid || !ImplicitlyValidateChildProperties) && model != null && !HasAlreadyBeenValidated(validationContext, model)) {
+				// default impl skips validating root node if any children fail, so we explicitly validate it in this scenario.
+				// Only do this for FV validators, otherwise DataAnnotations ends up generating duplicate messages
+				// as it runs during both property validation phase and model validation phase.
+				var fvRootModelValidators = validationContext.ActionContext.GetValidators(metadata)
+					.OfType<FluentValidationModelValidator>()
+					.ToList();
+
+				if (fvRootModelValidators.Count > 0) {
+					var validatorsWithCustomizations = ApplyCustomizationsToValidators(fvRootModelValidators, customizations, validationContext.ActionContext);
+					return ShallowValidate(metadata, validationContext, container, validatorsWithCustomizations);
+				}
+			}
+
+			return isValid;
+		}
+
+		private IEnumerable<ModelValidator> ApplyCustomizationsToValidators(IEnumerable<ModelValidator> validators, CustomizeValidatorAttribute customizations, HttpActionContext ctx) {
+			if (validators == null) return null;
+			// For the FV-specific model validator, clone it passing the context and customizations to the clone
+			// This is done rather than setting them on the original validator so we don't up with stale contexts in WebApi's cache
+			var projection = from validator in validators
+				let fluentValidator = validator as FluentValidationModelValidator
+				let needsCustomiations = fluentValidator != null && fluentValidator.Customizations == null
+				let newValidator = needsCustomiations ? (ModelValidator) fluentValidator.CloneWithCustomizations(customizations, ctx) : validator
+				select newValidator;
+
+			return projection.ToList();
+		}
+
+		private static IEnumerable<ModelValidator> GetValidators(HttpActionContext actionContext, ModelMetadata metadata, IModelValidatorCache validatorCache) {
+			if (validatorCache == null) {
+				// slow path: there is no validator cache on the configuration
+				return metadata.GetValidators(actionContext.GetValidatorProviders());
+			}
+			else {
+				return validatorCache.GetValidators(metadata);
+			}
+		}
+
+		protected override bool ShallowValidate(ModelMetadata metadata, BodyModelValidatorContext validationContext, object container, IEnumerable<ModelValidator> validators) {
+			var valid = base.ShallowValidate(metadata, validationContext, container, validators);
+
+			var model = GetModel(metadata);
+
+			if (model != null && validators.Any(x => x is FluentValidationModelValidator)) {
+				HashSet<object> progress = GetProgress(validationContext);
+				progress.Add(model);
+			}
+
+			return valid;
+		}
+
+		private object GetModel(ModelMetadata meta) {
 			object model = null;
 
 			try {
-				model = metadata.Model;
+				model = meta.Model;
 			}
 			catch {
-				// Retrieving the model failed - typically caused by a property getter throwing
-				// Being unable to retrieve a property is not a validation error - many properties can only be retrieved if certain conditions are met
-				// For example, Uri.AbsoluteUri throws for relative URIs but it shouldn't be considered a validation error
-				return true;
 			}
 
-			bool isValid = true;
+			return model;
+		}
 
-			// Optimization: we don't need to recursively traverse the graph for null and primitive types
-			if (model == null || IsSimpleType(model.GetType())) {
-				return ShallowValidate(metadata, validationContext, container);
-			}
+		private bool HasAlreadyBeenValidated(BodyModelValidatorContext validationContext, object model) {
+			return GetProgress(validationContext).Contains(model);
+		}
 
-			// Check to avoid infinite recursion. This can happen with cycles in an object graph.
-			if (validationContext.Visited.Contains(model)) {
-				return true;
-			}
-			validationContext.Visited.Add(model);
+		private HashSet<object> GetProgress(BodyModelValidatorContext context) {
+			HashSet<object> progress;
 
-			// Validate the children first - depth-first traversal
-			IEnumerable enumerableModel = model as IEnumerable;
-			if (enumerableModel == null) {
-				isValid = this.ValidateProperties(metadata, validationContext);
+			if (!context.ActionContext.Request.Properties.ContainsKey("_FV_Progress")) {
+				context.ActionContext.Request.Properties["_FV_Progress"] = progress = new HashSet<object>();
 			}
 			else {
-				isValid = this.ValidateElements(enumerableModel, validationContext);
+				progress = (HashSet<object>) context.ActionContext.Request.Properties["_FV_Progress"];
 			}
 
-            // Validate this node as well
-            isValid = ShallowValidate(metadata, validationContext, container) && isValid;
-			
-			// Pop the object so that it can be validated again in a different path
-			validationContext.Visited.Remove(model);
-
-			return isValid;
-		}
-
-		private bool ValidateProperties(ModelMetadata metadata, ValidationContext validationContext) {
-			bool isValid = true;
-			PropertyScope propertyScope = new PropertyScope();
-			validationContext.KeyBuilders.Push(propertyScope);
-			
-			foreach (ModelMetadata childMetadata in validationContext.MetadataProvider.GetMetadataForProperties(metadata.Model, metadata.ModelType)) {
-				propertyScope.PropertyName = childMetadata.PropertyName;
-			
-				if (!this.ValidateNodeAndChildren(childMetadata, validationContext, metadata.Model)) {
-					isValid = false;
-				}
-			}
-
-			validationContext.KeyBuilders.Pop();
-			return isValid;
-		}
-
-		private bool ValidateElements(IEnumerable model, ValidationContext validationContext) {
-			bool isValid = true;
-			Type elementType = GetElementType(model.GetType());
-			ModelMetadata elementMetadata = validationContext.MetadataProvider.GetMetadataForType(null, elementType);
-
-			ElementScope elementScope = new ElementScope() { Index = 0 };
-			validationContext.KeyBuilders.Push(elementScope);
-			
-			foreach (object element in model) {
-				elementMetadata.Model = element;
-				
-				if (!this.ValidateNodeAndChildren(elementMetadata, validationContext, model)) {
-					isValid = false;
-				}
-
-				elementScope.Index++;
-			}
-
-			validationContext.KeyBuilders.Pop();
-			return isValid;
-		}
-
-		// Validates a single node (not including children)
-		// Returns true if validation passes successfully
-		private static bool ShallowValidate(ModelMetadata metadata, ValidationContext validationContext, object container) {
-			bool isValid = true;
-			string key = null;
-
-			foreach (ModelValidator validator in validationContext.ActionContext.GetValidators(metadata)) {
-				// we use this flag to determine if we use the "patched" version or the default
-				var isFluentModelValidator = validator is FluentValidationModelValidator;
-				
-				foreach (ModelValidationResult error in validator.Validate(metadata, container)) {
-					if (key == null) {
-						key = validationContext.RootPrefix;
-
-						foreach (IKeyBuilder keyBuilder in validationContext.KeyBuilders.Reverse()) {
-							key = keyBuilder.AppendTo(key);
-						}
-
-						// Avoid adding model errors if the model state already contains model errors for that key
-						// We can't perform this check earlier because we compute the key string only when we detect an error
-						/*
-						 The default condition is: !validationContext.ModelState.IsValidField(key)
-						 For fluent validation we use validationContext.ModelState.ContainsKey(key)
-						 This is to avoid missing errors in the ModelState in case the binder added errors before the validation
-						*/
-						if ((!isFluentModelValidator && !validationContext.ModelState.IsValidField(key)) ||
-							(isFluentModelValidator && validationContext.ModelState.ContainsKey(key))) {
-							return false;
-						}
-					}
-
-					/*
-					 The default key is: key
-					 For fluent validation we use: CreatePropertyModelName(key, error.MemberName)
-					 This gets the errors group by property
-					*/
-					validationContext.ModelState.AddModelError(isFluentModelValidator ? CreatePropertyModelName(key, error.MemberName) : key, error.Message);
-					isValid = false;
-				}
-			}
-			return isValid;
-		}
-
-		private static Type GetElementType(Type type) {
-			Contract.Assert(typeof(IEnumerable).IsAssignableFrom(type));
-			if (type.IsArray) {
-				return type.GetElementType();
-			}
-
-			foreach (Type implementedInterface in type.GetInterfaces()) {
-				if (implementedInterface.IsGenericType && implementedInterface.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
-					return implementedInterface.GetGenericArguments()[0];
-				}
-			}
-
-			return typeof(object);
-		}
-
-		internal static string CreatePropertyModelName(string prefix, string propertyName) {
-			if (String.IsNullOrEmpty(prefix)) {
-				return propertyName ?? String.Empty;
-			}
-			else if (String.IsNullOrEmpty(propertyName)) {
-				return prefix ?? String.Empty;
-			}
-			else {
-				return prefix + "." + propertyName;
-			}
-		}
-
-		private class PropertyScope : IKeyBuilder {
-			public string PropertyName { get; set; }
-
-			public string AppendTo(string prefix) {
-				return CreatePropertyModelName(prefix, this.PropertyName);
-			}
-		}
-
-		internal static string CreateIndexModelName(string parentName, int index) {
-			return CreateIndexModelName(parentName, index.ToString(CultureInfo.InvariantCulture));
-		}
-
-		internal static string CreateIndexModelName(string parentName, string index) {
-			return (parentName.Length == 0) ? "[" + index + "]" : parentName + "[" + index + "]";
-		}
-
-		private class ElementScope : IKeyBuilder {
-			public int Index { get; set; }
-
-			public string AppendTo(string prefix)
-			{
-				return CreateIndexModelName(prefix, this.Index);
-			}
-		}
-
-		private class ValidationContext {
-			public ModelMetadataProvider MetadataProvider { get; set; }
-			public HttpActionContext ActionContext { get; set; }
-			public ModelStateDictionary ModelState { get; set; }
-			public HashSet<object> Visited { get; set; }
-			public Stack<IKeyBuilder> KeyBuilders { get; set; }
-			public string RootPrefix { get; set; }
+			return progress;
 		}
 	}
 }

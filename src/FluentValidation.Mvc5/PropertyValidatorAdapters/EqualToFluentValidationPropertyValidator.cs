@@ -28,14 +28,14 @@
 					ValidatorOptions.DisplayNameResolver(Rule.TypeToValidate, propertyToCompare, null)
 					?? propertyToCompare.Name.SplitPascalCase();
 
-				var formatter = new MessageFormatter()
+				var formatter = ValidatorOptions.MessageFormatterFactory()
 					.AppendPropertyName(Rule.GetDisplayName())
 					.AppendArgument("ComparisonValue", comparisonDisplayName);
 
 
 				string message;
 				try {
-					message = EqualValidator.ErrorMessageSource.GetString(null);
+					message = EqualValidator.Options.ErrorMessageSource.GetString(null);
 					
 				}
 				catch (FluentValidationMessageFormatException) {
